@@ -48,6 +48,7 @@ import {
 	PgCidr,
 	PgCustomColumn,
 	PgDate,
+	PgDateString,
 	PgDoublePrecision,
 	PgInet,
 	PgInteger,
@@ -68,6 +69,7 @@ import {
 	PgVarchar,
 } from 'drizzle-orm/pg-core';
 import {
+	SQLiteBigInt,
 	SQLiteBlobJson,
 	SQLiteBoolean,
 	SQLiteCustomColumn,
@@ -255,7 +257,7 @@ export function createSelectSchema<
 }
 
 function isWithEnum(column: AnyColumn): column is typeof column & WithEnum {
-	return 'enumValues' in column && Array.isArray(column.enumValues);
+	return 'enumValues' in column && Array.isArray(column.enumValues) && column.enumValues.length > 0;
 }
 
 function mapColumnToSchema(column: AnyColumn): z.ZodTypeAny {
@@ -287,7 +289,10 @@ function mapColumnToSchema(column: AnyColumn): z.ZodTypeAny {
 			|| column instanceof MySqlReal || column instanceof MySqlYear
 		) {
 			type = z.number();
-		} else if (column instanceof PgBigInt64 || column instanceof PgBigSerial64 || column instanceof MySqlBigInt64) {
+		} else if (
+			column instanceof PgBigInt64 || column instanceof PgBigSerial64 || column instanceof MySqlBigInt64
+			|| column instanceof SQLiteBigInt
+		) {
 			type = z.bigint();
 		} else if (column instanceof PgBoolean || column instanceof MySqlBoolean || column instanceof SQLiteBoolean) {
 			type = z.boolean();
@@ -301,13 +306,35 @@ function mapColumnToSchema(column: AnyColumn): z.ZodTypeAny {
 			column instanceof PgInterval || column instanceof PgNumeric || column instanceof PgChar
 			|| column instanceof PgCidr || column instanceof PgInet || column instanceof PgMacaddr
 			|| column instanceof PgMacaddr8 || column instanceof PgText || column instanceof PgTime
+			|| column instanceof PgDateString
 			|| column instanceof PgVarchar || column instanceof SQLiteNumeric || column instanceof SQLiteText
 			|| column instanceof MySqlDateString || column instanceof MySqlDateTimeString || column instanceof MySqlDecimal
 			|| column instanceof MySqlText || column instanceof MySqlTime || column instanceof MySqlTimestampString
 			|| column instanceof MySqlVarChar || column instanceof MySqlBinary
 			|| column instanceof MySqlVarBinary || column instanceof MySqlChar
 		) {
-			type = z.string();
+			let sType = z.string();
+
+			if (
+				(
+					column instanceof PgChar
+					|| column instanceof MySqlChar
+				)
+				&& typeof column.length === 'number'
+			) {
+				sType = sType.length(column.length);
+			} else if (
+				(
+					column instanceof PgVarchar
+					|| column instanceof MySqlVarChar
+					|| column instanceof SQLiteText
+				)
+				&& typeof column.length === 'number'
+			) {
+				sType = sType.max(column.length);
+			}
+
+			type = sType;
 		} else if (column instanceof PgUUID) {
 			type = z.string().uuid();
 		}
